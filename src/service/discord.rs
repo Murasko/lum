@@ -56,10 +56,7 @@ impl Service for DiscordService {
         &self.info
     }
 
-    fn start(
-        &mut self,
-        _service_manager: Arc<RwLock<ServiceManager>>,
-    ) -> PinnedBoxedFutureResult<'_, ()> {
+    fn start(&mut self, _service_manager: Arc<ServiceManager>) -> PinnedBoxedFutureResult<'_, ()> {
         Box::pin(async move {
             let framework = StandardFramework::new();
             framework.configure(Configuration::new().prefix("!"));

@@ -1,3 +1,4 @@
+use crate::setlock::SetLock;
 use downcast_rs::{impl_downcast, DowncastSync};
 use log::{error, info, warn};
 use std::{
@@ -13,9 +14,8 @@ use std::{
 };
 use tokio::sync::RwLock;
 
-use crate::setlock::SetLock;
-
 pub mod discord;
+pub mod osu_mute;
 
 pub type PinnedBoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
@@ -146,19 +146,13 @@ impl Hash for ServiceInfo {
 //TODO: When Rust allows async trait methods to be object-safe, refactor this to use async instead of returning a PinnedBoxedFutureResult
 pub trait Service: DowncastSync {
     fn info(&self) -> &ServiceInfo;
-    fn start(
-        &mut self,
-        service_manager: Arc<RwLock<ServiceManager>>,
-    ) -> PinnedBoxedFutureResult<'_, ()>;
+    fn start(&mut self, service_manager: Arc<ServiceManager>) -> PinnedBoxedFutureResult<'_, ()>;
     fn stop(&mut self) -> PinnedBoxedFutureResult<'_, ()>;
 
     // Used for downcasting in get_service method of ServiceManager
     //fn as_any_arc(&self) -> Arc<dyn Any + Send + Sync>;
 
-    fn wrapped_start(
-        &mut self,
-        service_manager: Arc<RwLock<ServiceManager>>,
-    ) -> PinnedBoxedFuture<()> {
+    fn wrapped_start(&mut self, service_manager: Arc<ServiceManager>) -> PinnedBoxedFuture<()> {
         Box::pin(async move {
             let mut status = self.info().status.write().await;
 
@@ -288,22 +282,15 @@ impl ServiceManagerBuilder {
         self
     }
 
-    pub async fn build(self) -> Arc<RwLock<ServiceManager>> {
+    pub async fn build(self) -> Arc<ServiceManager> {
         let service_manager = ServiceManager {
             services: self.services,
             arc: RwLock::new(SetLock::new()),
         };
 
-        let self_arc = Arc::new(RwLock::new(service_manager));
+        let self_arc = Arc::new(service_manager);
 
-        match self_arc
-            .write()
-            .await
-            .arc
-            .write()
-            .await
-            .set(Arc::clone(&self_arc))
-        {
+        match self_arc.arc.write().await.set(Arc::clone(&self_arc)) {
             Ok(()) => {}
             Err(err) => {
                 panic!(
@@ -319,7 +306,7 @@ impl ServiceManagerBuilder {
 
 pub struct ServiceManager {
     pub services: Vec<Arc<RwLock<dyn Service>>>,
-    arc: RwLock<SetLock<Arc<RwLock<Self>>>>,
+    arc: RwLock<SetLock<Arc<Self>>>,
 }
 
 impl ServiceManager {

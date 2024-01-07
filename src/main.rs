@@ -5,7 +5,7 @@ use lum::{
     bot::Bot,
     config::{Config, ConfigHandler},
     log,
-    service::{discord::DiscordService, Service},
+    service::{discord::DiscordService, osu_mute::OsuMuteService, Service},
 };
 use tokio::sync::RwLock;
 
@@ -57,5 +57,10 @@ fn initialize_services(config: &Config) -> Vec<Arc<RwLock<dyn Service>>> {
     let discord_service =
         DiscordService::new(config.discord_token.as_str(), config.discord_timeout);
 
-    vec![Arc::new(RwLock::new(discord_service))]
+    let osu_mute_service = OsuMuteService::new();
+
+    vec![
+        Arc::new(RwLock::new(discord_service)),
+        Arc::new(RwLock::new(osu_mute_service)),
+    ]
 }
