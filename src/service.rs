@@ -17,8 +17,11 @@ use tokio::sync::RwLock;
 pub mod discord;
 pub mod osu_mute;
 
-pub type PinnedBoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
+//TODO: When Rust allows async trait methods to be object-safe, remove these types and refactor the code to use async instead
+pub type BoxedFuture<'a, T> = Box<dyn Future<Output = T> + 'a>;
+pub type BoxedFutureResult<'a, T> = BoxedFuture<'a, Result<T, Box<dyn Error + Send + Sync>>>;
 
+pub type PinnedBoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 pub type PinnedBoxedFutureResult<'a, T> =
     PinnedBoxedFuture<'a, Result<T, Box<dyn Error + Send + Sync>>>;
 
@@ -28,8 +31,8 @@ pub enum Status {
     Stopped,
     Starting,
     Stopping,
-    FailedStarting(Box<dyn Error + Send + Sync>),
-    FailedStopping(Box<dyn Error + Send + Sync>),
+    FailedToStart(Box<dyn Error + Send + Sync>), //TODO: Test out if it'd be better to use a String instead
+    FailedToStop(Box<dyn Error + Send + Sync>),
     RuntimeError(Box<dyn Error + Send + Sync>),
 }
 
@@ -40,13 +43,14 @@ impl Display for Status {
             Status::Stopped => write!(f, "Stopped"),
             Status::Starting => write!(f, "Starting"),
             Status::Stopping => write!(f, "Stopping"),
-            Status::FailedStarting(error) => write!(f, "Failed to start: {}", error),
-            Status::FailedStopping(error) => write!(f, "Failed to stop: {}", error),
+            Status::FailedToStart(error) => write!(f, "Failed starting: {}", error),
+            Status::FailedToStop(error) => write!(f, "Failed to stop: {}", error),
             Status::RuntimeError(error) => write!(f, "Runtime error: {}", error),
         }
     }
 }
 
+//TODO: Remove?
 impl PartialEq for Status {
     fn eq(&self, other: &Self) -> bool {
         matches!(
@@ -55,8 +59,8 @@ impl PartialEq for Status {
                 | (Status::Stopped, Status::Stopped)
                 | (Status::Starting, Status::Starting)
                 | (Status::Stopping, Status::Stopping)
-                | (Status::FailedStarting(_), Status::FailedStarting(_))
-                | (Status::FailedStopping(_), Status::FailedStopping(_))
+                | (Status::FailedToStart(_), Status::FailedToStart(_))
+                | (Status::FailedToStop(_), Status::FailedToStop(_))
                 | (Status::RuntimeError(_), Status::RuntimeError(_))
         )
     }
@@ -149,9 +153,6 @@ pub trait Service: DowncastSync {
     fn start(&mut self, service_manager: Arc<ServiceManager>) -> PinnedBoxedFutureResult<'_, ()>;
     fn stop(&mut self) -> PinnedBoxedFutureResult<'_, ()>;
 
-    // Used for downcasting in get_service method of ServiceManager
-    //fn as_any_arc(&self) -> Arc<dyn Any + Send + Sync>;
-
     fn wrapped_start(&mut self, service_manager: Arc<ServiceManager>) -> PinnedBoxedFuture<()> {
         Box::pin(async move {
             let mut status = self.info().status.write().await;
@@ -175,7 +176,7 @@ pub trait Service: DowncastSync {
                 }
                 Err(error) => {
                     error!("Failed to start service {}: {}", self.info().name, error);
-                    self.info().set_status(Status::FailedStarting(error)).await;
+                    self.info().set_status(Status::FailedToStart(error)).await;
                 }
             }
         })
@@ -204,7 +205,7 @@ pub trait Service: DowncastSync {
                 }
                 Err(error) => {
                     error!("Failed to stop service {}: {}", self.info().name, error);
-                    self.info().set_status(Status::FailedStopping(error)).await;
+                    self.info().set_status(Status::FailedToStop(error)).await;
                 }
             }
         })
@@ -405,8 +406,8 @@ impl ServiceManager {
                                 .push_str(&format!(" - {}: {}\n", info.name, status));
                         }
                     },
-                    Status::FailedStarting(_)
-                    | Status::FailedStopping(_)
+                    Status::FailedToStart(_)
+                    | Status::FailedToStop(_)
                     | Status::RuntimeError(_) => match priority {
                         Priority::Essential => {
                             failed_essentials.push_str(&format!(" - {}: {}\n", info.name, status));

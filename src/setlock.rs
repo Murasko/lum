@@ -68,3 +68,5 @@ impl<T> Default for SetLock<T> {
         Self::new()
     }
 }
+
+//TODO: Implement DeRef

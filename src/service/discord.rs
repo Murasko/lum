@@ -14,6 +14,7 @@ use serenity::{
 };
 use std::{sync::Arc, time::Duration};
 use tokio::{
+    spawn,
     sync::{Mutex, Notify, RwLock},
     task::JoinHandle,
     time::{sleep, timeout},
@@ -98,7 +99,7 @@ impl Service for DiscordService {
             }
 
             info!("Connecting to Discord");
-            let client_handle = tokio::spawn(async move { client.start().await });
+            let client_handle = spawn(async move { client.start().await });
 
             // This prevents waiting for the timeout if the client fails immediately
             // TODO: Optimize this, as it will currently add 1000mqs to the startup time
